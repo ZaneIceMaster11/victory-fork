@@ -25,7 +25,7 @@ developer or publisher.
 ## Status of this fork (2026-11-25)
 
 **Not playable yet: 2.5 to 4 frames per second, and shadowed areas are black.**
-Tested on one machine: Windows 11, Intel i7-14700KF, NVIDIA RTX 4070 12 GB,
+Tested on one machine: Windows 10, AMD Ryzen 7 5700x3D, NVIDIA RTX 3060 12GB,
 32 GB RAM. The Series X profile is used throughout.
 
 | Stage | State in this fork |
