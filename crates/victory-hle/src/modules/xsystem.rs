@@ -160,11 +160,18 @@ mod device_type {
         (&raw const OEM).cast_mut().cast()
     }
 
-    /// What the title's code maps to each model's device type.
+    /// The `ConsoleMode` value the title maps to each model's device type.
+    /// The title's own mapper (`game_scarlett_master` RVA 0x55deb88, found by
+    /// tracing who reads this value) maps it to an internal SKU enum:
+    /// `0x58 -> 5` (Scarlett Lockhart / Series S), `0x60 -> 6` (Scarlett
+    /// Anaconda / Series X), `0x64 -> 7`. Series S was reported as 0x60, which
+    /// the title read as Series X (enum 6) while we resourced it as Series S -
+    /// a device mismatch that hard-gated it at ~19 draws. 0x58 maps to the
+    /// Lockhart enum and the Series S title progresses and submits its world.
     pub(super) fn console_mode(console: Console) -> u32 {
         match console {
             Console::SeriesX => 0x64,
-            Console::SeriesS => 0x60,
+            Console::SeriesS => 0x58,
         }
     }
 
@@ -291,7 +298,7 @@ mod device_type {
         #[test]
         fn titles_read_the_chosen_model() {
             assert_eq!(console_mode(Console::SeriesX), 0x64);
-            assert_eq!(console_mode(Console::SeriesS), 0x60);
+            assert_eq!(console_mode(Console::SeriesS), 0x58);
             let mut key = std::ptr::null_mut();
             let path = w(&KEY.to_ascii_lowercase());
             assert_eq!(RegOpenKeyW(LOCAL_MACHINE, path.as_ptr(), &mut key), SUCCESS);
