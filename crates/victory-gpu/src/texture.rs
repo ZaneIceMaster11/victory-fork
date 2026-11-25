@@ -112,7 +112,7 @@ fn staging_buffer(host: &crate::host::Host, total: u64) -> Option<(ID3D12Resourc
         // (Counted as made: the frame log's "staging N made" is then the
         // buffers of a run without the pool too.)
         SPARE_STATS[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        return host.upload_buffer(total).map(|(buffer, data)| (buffer, data, 0));
+        return new_staging(host, total).map(|(buffer, data)| (buffer, data, 0));
     }
     let spare = {
         let mut all = SPARE.lock().unwrap_or_else(|e| e.into_inner());
@@ -130,7 +130,33 @@ fn staging_buffer(host: &crate::host::Host, total: u64) -> Option<(ID3D12Resourc
         return Some((buffer, data as *mut u8, size));
     }
     SPARE_STATS[1].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    host.upload_buffer(size).map(|(buffer, data)| (buffer, data, size))
+    new_staging(host, size).map(|(buffer, data)| (buffer, data, size))
+}
+
+/// Whether texture staging buffers are made in the card's own memory - a GPU
+/// upload heap the CPU writes through a resizable BAR - instead of system RAM
+/// (`VICTORY_TEXTURE_REBAR=1`; off by default). The detile then writes the
+/// texels straight into card memory and the upload copy stays on the card,
+/// in place of a DMA of the staging buffer up from system RAM (which is where
+/// the "textures N MB" preparing time and the card's copy of it go in a
+/// streaming burst). The whole working set of staging buffers then lives in
+/// VRAM, so the pool (`VICTORY_STAGING_POOL_MB`) bounds what it costs there.
+fn texture_rebar() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_TEXTURE_REBAR").is_some_and(|v| v == "1"))
+}
+
+/// A staging buffer of `size` bytes: in a GPU upload heap with
+/// [`texture_rebar`] (the device permitting - `gpu_upload_buffer` self-tests
+/// the heap once and turns it down if a read-back does not match), else the
+/// usual system-RAM upload buffer.
+fn new_staging(host: &crate::host::Host, size: u64) -> Option<(ID3D12Resource, *mut u8)> {
+    if texture_rebar()
+        && let Some(made) = host.gpu_upload_buffer(size)
+    {
+        return Some(made);
+    }
+    host.upload_buffer(size)
 }
 
 /// Whether staging buffers are taken from and returned to the spare ones
