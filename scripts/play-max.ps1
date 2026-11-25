@@ -31,6 +31,11 @@ $env:VICTORY_INDIRECT_GATHER     = "1"
 # Textures: don't block the frame on a refresh; stream mip levels on demand:
 $env:VICTORY_TEXTURE_NO_WAIT     = "1"
 $env:VICTORY_LEVELS_ON_DEMAND    = "1"
+# NOTE (8-core/16-thread, matches the Series X CPU 1:1): VICTORY_SPREAD is a
+# no-op here ("no spare processors") - it only helps heterogeneous P/E-core
+# CPUs. The heavy-scene hitch on this machine is CPU-bound texture detile +
+# title-memory hashing of large streaming bursts while the GPU sits idle; the
+# real fix is moving detile to the GPU, not a launch switch.
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
 & $exe run $game --execute --console $console @Rest

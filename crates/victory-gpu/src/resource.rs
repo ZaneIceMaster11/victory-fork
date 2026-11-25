@@ -259,12 +259,23 @@ pub(crate) fn target_format(format: u32) -> u32 {
     #[cfg(windows)]
     {
         use windows::Win32::Graphics::Direct3D12::*;
+        // Until the host device exists the support query cannot run; no PC GPU
+        // renders to these console formats, so the stand-in is the safe answer
+        // meanwhile, and the cache is left for a call that has the device.
+        let Some(host) = crate::host::host() else {
+            return STAND_INS[i].1;
+        };
+        // R9G9B9E5 (67) is never a render target or unordered-access view on
+        // PC, whatever the format-support query says: a NVIDIA driver reports
+        // both for it, but `CreateCommittedResource` with the render-target or
+        // UAV flag then fails (E_INVALIDARG). The missing host texture was
+        // later named in a view, an invalid call the runtime answered by
+        // removing the device (a card lost mid-run). So it is always refused;
+        // the query decides the rest (86 and 115 are refused on NVIDIA too).
+        const R9G9B9E5: u32 = 67;
         static REFUSED: std::sync::OnceLock<[bool; 3]> = std::sync::OnceLock::new();
         let refused = REFUSED.get_or_init(|| {
             STAND_INS.map(|(f, to)| {
-                let Some(host) = crate::host::host() else {
-                    return false;
-                };
                 let mut support = D3D12_FEATURE_DATA_FORMAT_SUPPORT {
                     Format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT(f as i32),
                     ..Default::default()
@@ -279,7 +290,7 @@ pub(crate) fn target_format(format: u32) -> u32 {
                 };
                 let both = D3D12_FORMAT_SUPPORT1_RENDER_TARGET.0
                     | D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW.0;
-                let refused = asked.is_err() || support.Support1.0 & both != both;
+                let refused = f == R9G9B9E5 || asked.is_err() || support.Support1.0 & both != both;
                 if refused {
                     tracing::info!(format = f, stand_in = to, "the host does not render to this format: a stand-in is used");
                 }
