@@ -1825,13 +1825,12 @@ void main() {
         );
         assert_eq!(after_src, initial_src, "src_args must remain untouched");
 
-        let mut kept = 0usize;
+        let mut kept = Vec::new();
         let mut zeroed = 0usize;
         for i in 0..RECORDS as usize {
             let rec = &out_words[i * 6..(i + 1) * 6];
             if rec[0] == (1 << 22) && rec[1] == 16 {
-                assert!(i == 1 || i == 2, "the first two real draws fit the budget");
-                kept += 1;
+                kept.push(i);
             } else {
                 assert_eq!((rec[0], rec[1]), (0, 0), "excess draw must be zeroed");
                 zeroed += 1;
@@ -1841,7 +1840,19 @@ void main() {
             assert_eq!(rec[4], 5000 + i as u32);
             assert_eq!(rec[5], 0xCAFE_0000 | (i as u32));
         }
-        assert_eq!((kept, zeroed), (2, (RECORDS as usize) - 2));
+        // Exactly two real draws fit the 2^27 budget (each costs 2^26). The
+        // 128 records span two thread groups (0-63 and 64-127); each group's
+        // leader claims the shared budget with one atomic compare-exchange, so
+        // whichever group wins the race keeps its first two real draws and the
+        // other keeps none. The GPU schedules groups in either order (WARP
+        // runs group 1 first; some hardware runs group 0 first), so the
+        // survivors are {1, 2} (group 0; record 0 is a non-draw) or {64, 65}
+        // (group 1) - both are correct, only the scheduling differs.
+        assert!(
+            kept == [1, 2] || kept == [64, 65],
+            "two real draws fit the budget, from whichever group won the claim; got {kept:?}"
+        );
+        assert_eq!(zeroed, RECORDS as usize - 2);
     }
 
     /// Exercises `HostList::indirect_scratch`, `bound`, the scratch buffer's
