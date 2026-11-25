@@ -7163,7 +7163,19 @@ impl HostList {
     fn run_deferred(&self, batch: &mut Batch) {
         #[cfg(feature = "diagnostics")]
         use crate::copystat::{C, add};
+        // Texture detiles have nothing to do with one another: each writes its
+        // own staging buffer and reads title memory. With VICTORY_WIDE_TEXTURES
+        // they are gathered and detiled across the helper threads instead of
+        // one after the other here on the submitting thread (the frame line's
+        // "textures N ms", the biggest serial cost in a streaming burst). They
+        // are flushed before a Copy or Run, which may write title memory a
+        // detile reads (see Step::Texture's note), and once more at the end.
+        let wide = wide_textures();
+        let mut textures: Vec<std::sync::Arc<crate::texture::Staging>> = Vec::new();
         for step in &self.deferred().copies {
+            if wide && !textures.is_empty() && matches!(step, Step::Copy(..) | Step::Run(_)) {
+                flush_textures(&mut textures);
+            }
             let started = std::time::Instant::now();
             let copied = match step {
                 &Step::Copy(dst, src, len) => {
@@ -7239,7 +7251,11 @@ impl HostList {
                 }
                 Step::Texture(staging) => {
                     if batch.texture_due(staging) {
-                        staging.refresh();
+                        if wide {
+                            textures.push(staging.clone());
+                        } else {
+                            staging.refresh();
+                        }
                     }
                     continue;
                 }
@@ -7247,7 +7263,41 @@ impl HostList {
             preparing(0, started.elapsed().as_micros() as u64);
             preparing(1, copied as u64);
         }
+        if wide {
+            flush_textures(&mut textures);
+        }
     }
+}
+
+/// Whether a submission's texture detiles run on several threads instead of
+/// one after the other on the submitting thread (`VICTORY_WIDE_TEXTURES=1`;
+/// off by default). A streaming burst detiles hundreds of megabytes of
+/// textures a frame (the frame line's "textures N ms"), each into its own
+/// staging buffer from title memory it reads - independent work, so the
+/// detiles are spread over the helper threads kept for the snapshots
+/// ([`crate::shadow::wide_run`]). The write-watch journal and the guards a
+/// detile touches are behind their own locks, as for the title's threads and
+/// for the buffer copies that [`wide_refresh`] already spreads.
+fn wide_textures() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_WIDE_TEXTURES").is_some_and(|v| v == "1"))
+}
+
+/// Detiles the gathered texture staging buffers: across the helper threads
+/// when there are two or more ([`crate::shadow::wide_run`] runs one job a
+/// thread and helps on the calling thread), else in place.
+fn flush_textures(textures: &mut Vec<std::sync::Arc<crate::texture::Staging>>) {
+    if textures.len() < 2 {
+        for staging in textures.drain(..) {
+            staging.refresh();
+        }
+        return;
+    }
+    let jobs: Vec<Box<dyn FnOnce() + Send>> = textures
+        .drain(..)
+        .map(|staging| Box::new(move || staging.refresh()) as Box<dyn FnOnce() + Send>)
+        .collect();
+    crate::shadow::wide_run(jobs);
 }
 
 /// Whether a submission's refreshes of host copies run on several threads,
