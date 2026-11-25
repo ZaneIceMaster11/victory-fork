@@ -83,3 +83,23 @@ pub use watch::{
     title_memory_reading, title_memory_remapped, title_memory_remapping, title_memory_written,
     writing as kernel_will_write,
 };
+
+/// Exports `D3D12SDKVersion`/`D3D12SDKPath` from this crate's own test
+/// binary (see `build.rs`), so the `host`-backed tests under
+/// `pipeline::host::tests` and `descriptor::host::tests` can get shader
+/// model 6.6 from a redistributed DirectX 12 Agility SDK core, rather than
+/// whatever the OS's `d3d12.dll` happens to support. `#[cfg(test)]`-gated
+/// so these never end up in the rlib `apps/victory` links against (which
+/// exports the same symbols itself, from its own exe).
+#[cfg(test)]
+mod agility_export {
+    #[repr(transparent)]
+    pub struct ReadOnlyCStr(*const u8);
+    // SAFETY: points at a 'static byte-string literal; never written to.
+    unsafe impl Sync for ReadOnlyCStr {}
+
+    #[unsafe(no_mangle)]
+    pub static D3D12SDKVersion: u32 = 620;
+    #[unsafe(no_mangle)]
+    pub static D3D12SDKPath: ReadOnlyCStr = ReadOnlyCStr(c".\\D3D12\\".as_ptr().cast());
+}
