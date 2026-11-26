@@ -356,10 +356,39 @@ unsafe fn sse4a(code: *const u8, xmm: &mut [M128A; 16]) -> Option<usize> {
     Some(len)
 }
 
+/// Whether a title breakpoint (`int3`) is stepped over instead of left to
+/// crash (`VICTORY_SKIP_BREAKPOINTS=1`, off by default). The Series S boot
+/// hits one in a global constructor (`+0x1e1d574`, right after imports bind)
+/// that is a checkpoint, not a fatal trap - the title ran past it in earlier
+/// sessions and reached the menus. Stepping its one byte, as a debugger would
+/// on "continue", lets the boot go on. Capped so a storm of them cannot spin.
+fn skip_breakpoints() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_SKIP_BREAKPOINTS").is_some_and(|v| v == "1"))
+}
+
 unsafe extern "system" fn handler(info: *mut EXCEPTION_POINTERS) -> i32 {
+    // SAFETY: the system passes valid exception pointers.
+    let code = unsafe { (*(*info).ExceptionRecord).ExceptionCode };
+    if code == EXCEPTION_BREAKPOINT && skip_breakpoints() {
+        static SKIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = SKIPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // A guard against an int3 that re-fires forever: past the cap they are
+        // left to the usual path (a crash) so a run cannot hang.
+        if n < 4096 {
+            // SAFETY: the faulting thread's context; Rip is at the int3 (0xCC,
+            // one byte), stepped to the next instruction.
+            let rip = unsafe { (*(*info).ContextRecord).Rip };
+            if n < 8 {
+                tracing::info!(at = format_args!("{rip:#x}"), count = n + 1, "VICTORY_SKIP_BREAKPOINTS: stepping over a title int3");
+            }
+            unsafe { (*(*info).ContextRecord).Rip = rip + 1 };
+            return -1; // EXCEPTION_CONTINUE_EXECUTION
+        }
+    }
     // an instruction of the console's CPU this one lacks: emulated, the title goes on
     // SAFETY: the system passes valid exception pointers.
-    if unsafe { (*(*info).ExceptionRecord).ExceptionCode } == EXCEPTION_ILLEGAL_INSTRUCTION {
+    if code == EXCEPTION_ILLEGAL_INSTRUCTION {
         // SAFETY: the faulting thread's context, for the exception being dispatched.
         let r = unsafe { crate::console_insn::emulate(&mut *(*info).ContextRecord) };
         if r != 0 {
