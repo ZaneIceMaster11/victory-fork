@@ -20,6 +20,9 @@ $console = if ($ConsoleS) { "series-s" } else { "series-x" }
 $env:VICTORY_TEXTURE_BACK        = "1"   # ocean height/displacement maps read back to title memory
 $env:VICTORY_CARD_HASH_LEN       = "1"   # the water is lit right (blue, waves, sun path)
 
+# --- Display: cap at 1440p (the title renders for 4K otherwise, wasting GPU) ---
+$env:VICTORY_DISPLAY_MODE        = "2560x1440"
+
 # --- fxceless's proven frame-rate set (run 279/280) ---
 $env:VICTORY_LEVELS_ON_DEMAND    = "1"
 $env:VICTORY_ASYNC_SUBMIT        = "1"

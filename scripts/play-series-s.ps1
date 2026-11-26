@@ -22,6 +22,9 @@ $env:VICTORY_SKIP_BREAKPOINTS    = "1"   # step over the boot int3
 $env:VICTORY_TEXTURE_BACK        = "1"
 $env:VICTORY_CARD_HASH_LEN       = "1"
 
+# --- Display: cap at 1440p (no 4K) ---
+$env:VICTORY_DISPLAY_MODE        = "2560x1440"
+
 # --- Proven frame-rate set (shared with play-max) ---
 $env:VICTORY_LEVELS_ON_DEMAND    = "1"
 $env:VICTORY_ASYNC_SUBMIT        = "1"
