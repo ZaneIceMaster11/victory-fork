@@ -44,6 +44,7 @@ $env:VICTORY_LIGHT_REFRESH       = "1"   # lock-free host-copy refresh
 $env:VICTORY_STEP_INDEX          = "1"   # a submission's steps found by index
 $env:VICTORY_FILLS_PLAIN         = "1"   # small fills copied in place
 $env:VICTORY_COPY_CHANGED        = "1"   # incremental refresh: send only the changed bytes to the card (81->4-21 MB/frame)
+$env:VICTORY_AMBIENT           = "0.6"   # non-black indirect light while ray tracing is off
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"

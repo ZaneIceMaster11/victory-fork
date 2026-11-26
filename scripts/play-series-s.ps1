@@ -44,6 +44,7 @@ $env:VICTORY_LIGHT_REFRESH       = "1"
 $env:VICTORY_STEP_INDEX          = "1"
 $env:VICTORY_FILLS_PLAIN         = "1"
 $env:VICTORY_COPY_CHANGED        = "1"   # incremental refresh: only changed bytes to the card
+$env:VICTORY_AMBIENT           = "0.6"   # non-black indirect light while ray tracing is off
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
