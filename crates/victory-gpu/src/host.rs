@@ -145,7 +145,13 @@ pub(crate) fn vram_idle_ms(video_memory: Option<[u64; 4]>) -> u64 {
 
 /// Effective idle timeout (in milliseconds) for system-RAM caches (staging
 /// buffers, loose shadows, and the mapped pipeline library), scaled down
-/// when free physical RAM is low. Never returns less than 2,000 ms.
+/// when free physical RAM is low. Never returns less than 2,000 ms (below
+/// that the mapped pipeline library would thrash).
+///
+/// The thresholds sit above the free-RAM levels the out-of-memory device
+/// loss was seen at (~2.6 GB free, the process at ~24 GB): the host copies
+/// of title buffers that can be re-made are let go harder before the commit
+/// runs out, rather than at the relaxed 5 s it was at there.
 pub(crate) fn ram_idle_ms(avail_phys: Option<u64>) -> u64 {
     const GIB: u64 = 1024 * 1024 * 1024;
     const NORMAL_MS: u64 = 10_000;
@@ -154,9 +160,9 @@ pub(crate) fn ram_idle_ms(avail_phys: Option<u64>) -> u64 {
     let Some(avail) = avail_phys else {
         return NORMAL_MS;
     };
-    if avail < 2 * GIB {
+    if avail < 3 * GIB {
         HIGH_MS
-    } else if avail < 4 * GIB {
+    } else if avail < 6 * GIB {
         MODERATE_MS
     } else {
         NORMAL_MS
@@ -9669,14 +9675,14 @@ mod batch {   // Batch::texture_due lives here; `mod tests` is already taken at 
     fn ram_idle_ms_scales_with_pressure() {
         use super::ram_idle_ms;
         let gib = 1024 * 1024 * 1024;
-        // Normal (>= 4 GiB)
+        // Normal (>= 6 GiB)
         assert_eq!(ram_idle_ms(Some(8 * gib)), 10_000);
-        assert_eq!(ram_idle_ms(Some(4 * gib)), 10_000);
-        // Moderate (2 GiB..4 GiB)
-        assert_eq!(ram_idle_ms(Some(4 * gib - 1)), 5_000);
-        assert_eq!(ram_idle_ms(Some(2 * gib)), 5_000);
-        // High (< 2 GiB)
-        assert_eq!(ram_idle_ms(Some(2 * gib - 1)), 2_000);
+        assert_eq!(ram_idle_ms(Some(6 * gib)), 10_000);
+        // Moderate (3 GiB..6 GiB)
+        assert_eq!(ram_idle_ms(Some(6 * gib - 1)), 5_000);
+        assert_eq!(ram_idle_ms(Some(3 * gib)), 5_000);
+        // High (< 3 GiB) - the OOM device loss was near 2.6 GiB free
+        assert_eq!(ram_idle_ms(Some(3 * gib - 1)), 2_000);
         assert_eq!(ram_idle_ms(Some(0)), 2_000);
         // Missing falls back to normal
         assert_eq!(ram_idle_ms(None), 10_000);

@@ -1774,7 +1774,11 @@ pub(crate) fn let_go_idle() {
     if !*ON.get_or_init(|| std::env::var_os("VICTORY_TEXTURE_SWEEP").is_none_or(|v| v != "0")) {
         return;
     }
-    let idle_ms = crate::host::vram_idle_ms(crate::host::host().and_then(|h| h.video_memory()));
+    // Under VRAM pressure or low free RAM: filled textures are re-made from
+    // title memory, so they go at whichever says to go sooner (the out-of-
+    // memory device loss was low on both).
+    let idle_ms = crate::host::vram_idle_ms(crate::host::host().and_then(|h| h.video_memory()))
+        .min(crate::host::ram_idle_ms(crate::host::available_physical_ram()));
     // For the trail (`crate::host::trail`): how many went, their bytes,
     // and the first one.
     let (mut went, mut bytes, mut first) = (0u64, 0u64, None);
