@@ -1766,6 +1766,10 @@ pub(crate) fn card_accounting(room: bool, due: [u64; 5], never: Vec<(u64, u64)>,
 pub(crate) fn let_go_idle() {
     use std::sync::atomic::Ordering::Relaxed;
     const IDLE_FRAMES: u64 = 4;
+    // Copies the host renders to or writes are kept far longer: 30 s and 60
+    // frames idle, past any history buffer's per-frame reuse.
+    const TARGET_IDLE_MS: u64 = 30_000;
+    const TARGET_IDLE_FRAMES: u64 = 60;
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if !*ON.get_or_init(|| std::env::var_os("VICTORY_TEXTURE_SWEEP").is_none_or(|v| v != "0")) {
         return;
@@ -1779,13 +1783,29 @@ pub(crate) fn let_go_idle() {
         // SAFETY: a texture leaves the table before it is freed, under the
         // lock held here (`Drop for Resource`).
         let r = unsafe { &*(at as *const Resource) };
-        if !fills(&r.desc) || crate::texture::host_wrote(at) {
+        // Copies of textures the title fills are re-made from title memory, so
+        // they go at the pressure-scaled idle time. Copies the host renders to
+        // or writes cannot be re-made (their bytes came from the card, not
+        // title memory), so they are kept far longer and go only when long
+        // dead - 30 s and 60 frames idle and held by no list, slot or view,
+        // past any history buffer's per-frame reuse. The next use re-makes an
+        // empty one, which the title renders into. These grew to ~3 GB and
+        // never shrank, the main driver of the slow memory climb that loses
+        // the card after 30-50 min. VICTORY_SWEEP_TARGETS=0 keeps them, as
+        // before; `used` updates on every host_resource access (a render-target
+        // bind included), so an active target is never idle.
+        let target = !fills(&r.desc) || crate::texture::host_wrote(at);
+        let (idle_wait, idle_frames) = if !target {
+            (idle_ms, IDLE_FRAMES)
+        } else if sweep_targets() {
+            (TARGET_IDLE_MS, TARGET_IDLE_FRAMES)
+        } else {
             continue;
-        }
+        };
         let gone = {
             let mut made = r.host.made.lock().unwrap_or_else(|e| e.into_inner());
             let idle = made.as_ref().is_some_and(|(host, _)| {
-                crate::host::long_ago(r.host.used.load(Relaxed), idle_ms, IDLE_FRAMES)
+                crate::host::long_ago(r.host.used.load(Relaxed), idle_wait, idle_frames)
                     && std::sync::Arc::strong_count(host) == 1
                     && crate::host::references(&host.texture) == 1
             });
@@ -1813,12 +1833,25 @@ pub(crate) fn let_go_idle() {
     if went > 0 {
         crate::host::trail(|| {
             format!(
-                "sweep: {went} host copies of textures the title fills let go ({} KiB), each held by its title texture alone (no list, no slot); the first: title texture {:#x}",
+                "sweep: {went} host copies of textures let go ({} KiB), each held by its title texture alone (no list, no slot); the first: title texture {:#x}",
                 bytes >> 10,
                 first.unwrap_or(0)
             )
         });
     }
+}
+
+/// Whether the sweep also lets go of the host copies the host renders to or
+/// writes once they are long dead (`VICTORY_SWEEP_TARGETS`, on by default;
+/// `0` keeps them forever, as before [`let_go_idle`]). These cannot be re-made
+/// from title memory, so they go only after 30 s and 60 frames idle and held
+/// by nothing - past any history buffer's per-frame reuse. They were the main
+/// driver of the slow climb to the out-of-memory device loss (~3 GB that never
+/// shrank); the next use re-makes an empty copy for the title to render into.
+#[cfg(windows)]
+fn sweep_targets() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("VICTORY_SWEEP_TARGETS").is_none_or(|v| v != "0"))
 }
 
 /// For the memory line: the host copies the sweep never lets go
