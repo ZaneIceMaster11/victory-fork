@@ -43,6 +43,7 @@ $env:VICTORY_WIDE_TEXTURES       = "1"   # detile a submission's textures across
 $env:VICTORY_LIGHT_REFRESH       = "1"   # lock-free host-copy refresh
 $env:VICTORY_STEP_INDEX          = "1"   # a submission's steps found by index
 $env:VICTORY_FILLS_PLAIN         = "1"   # small fills copied in place
+$env:VICTORY_COPY_CHANGED        = "1"   # incremental refresh: send only the changed bytes to the card (81->4-21 MB/frame)
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
 & $exe run $game --execute --console $console @Rest
