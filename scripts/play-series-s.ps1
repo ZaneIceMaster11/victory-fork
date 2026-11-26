@@ -46,4 +46,8 @@ $env:VICTORY_FILLS_PLAIN         = "1"
 $env:VICTORY_COPY_CHANGED        = "1"   # incremental refresh: only changed bytes to the card
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
-& $exe run $game --execute --console series-s @Rest
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$log = Join-Path $PSScriptRoot "..\state\play-series-s-$stamp.log"
+Write-Host "Logging this run to $log" -ForegroundColor Cyan
+& $exe run $game --execute --console series-s @Rest *>&1 | Tee-Object -FilePath $log
+& (Join-Path $PSScriptRoot "diag-summary.ps1") -DiagLog $log

@@ -46,4 +46,8 @@ $env:VICTORY_FILLS_PLAIN         = "1"   # small fills copied in place
 $env:VICTORY_COPY_CHANGED        = "1"   # incremental refresh: send only the changed bytes to the card (81->4-21 MB/frame)
 
 $exe = Join-Path $PSScriptRoot "..\target\diag\victory.exe"
-& $exe run $game --execute --console $console @Rest
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$log = Join-Path $PSScriptRoot "..\state\play-$console-$stamp.log"
+Write-Host "Logging this run to $log" -ForegroundColor Cyan
+& $exe run $game --execute --console $console @Rest *>&1 | Tee-Object -FilePath $log
+& (Join-Path $PSScriptRoot "diag-summary.ps1") -DiagLog $log
